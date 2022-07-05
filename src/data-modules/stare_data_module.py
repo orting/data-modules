@@ -1,30 +1,25 @@
 # pylint: disable=trailing-whitespace
 '''See class STAREDataModule'''
 import os
-import mmap
-import glob
 import tarfile
 import gzip
-import hashlib
 import csv
 import random
 from zipfile import ZipFile
 
 import wget
-import pandas as pd
 import numpy as np
-import pytorch_lightning as pl
-import torchio as tio
 from skimage.io import imread, imsave
-from torch.utils.data import DataLoader
 
+from util import verify_sha256
+from retina_data_module import RetinaDataModule
 
 __all__ = [
     'STAREDataModule'
     ]
 
 
-class STAREDataModule(pl.LightningDataModule):
+class STAREDataModule(RetinaDataModule):
     '''Data module for loading STARE data
     STARE: STructured Analysis of the Retina 
     https://cecas.clemson.edu/~ahoover/stare/
@@ -39,13 +34,12 @@ class STAREDataModule(pl.LightningDataModule):
     '''
     # pylint: disable=too-many-instance-attributes
     def __init__(self,
-                 image_dir,
-                 label_dir_ah, 
-                 label_dir_vk,
+                 data_dir,
                  data_info_path,
                  batch_size,
                  download=False,
                  prepare_data_for_processing=False,
+                 annotation_merge_style='bitmask',
                  preprocessing_transform=None,
                  augmentation_transform=None,
                  train_ratio=0.4,
@@ -55,14 +49,13 @@ class STAREDataModule(pl.LightningDataModule):
         '''
         Parameters
         ----------
-        image_dir : str
-          The directory containing the 397 images from STARE. 
-        
-        label_dir_ah: str
-          The directory containing the 20 manual segmentations done by Adam Hoover
-
-        label_dir_vk : str
-          The directory containing the 20 manual segmentations done by Adam Hoover
+        data_dir : str
+          If `download` is True, data will be downloaded to this directory.
+          If `download` is False the directory should contain the STARE data in the following
+          subdirectories
+            images/    : Directory with the 397 images from STARE. 
+            labels-ah/ : Directory with 20 manual segmentations by Adam Hoover
+            labels-vk/ : Directory with 20 manual segmentations by Valentina Kouznetsova
 
         data_info_path : str
           EITHER
@@ -83,7 +76,15 @@ class STAREDataModule(pl.LightningDataModule):
 
         prepare_data_for_processing : bool, optional
           If True, convert ppm to png, create empty annotations for image that do not have
-          annotations, create annotation weights
+          annotations, create annotation weights, merge_annotations
+
+        annotation_merge_style : one of {'bitmask', 'union', 'intersection'}
+          There are two annotations for each annontated image. They need to be represented as a
+          single image using one of the following strategies
+          'bitmask' : Bitmask with 0 = bg, 1 = AH, 2 = VK, 3 = AH + VK
+          'union' : The union of the two annotations
+          'intersection' : The intersection of the two annotations
+                          
 
         preprocessing_transform : torchio.transforms.Transform, optional
           Transforms to apply to all images
@@ -104,19 +105,22 @@ class STAREDataModule(pl.LightningDataModule):
         '''
         # pylint: disable=too-many-arguments
         super().__init__()
-        self.image_dir = image_dir
-        self.label_dir_ah = label_dir_ah
-        self.label_dir_vk = label_dir_vk
+        self.data_dir = data_dir
         self.preprocess = preprocessing_transform
         self.augment = augmentation_transform
         self.data_info_path = data_info_path
         self.batch_size = batch_size
         self.download = download
         self.prepare_data_for_processing = prepare_data_for_processing
+        self.annotation_merge_style = annotation_merge_style
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
-        self.datasets = {}
         self.num_workers = num_workers
+        self.labeled = [1,2,3,4,5,44,77,81,82,139,162,163,235,236,239,240,255,291,319,324]
+        self.missing = [47,108,109,144,167]
+        self.unlabeled = [
+            i for i in range(1, 403) if not i in self.labeled and not i in self.missing
+        ]
         
     def prepare_data(self):
         if self.download:
@@ -129,56 +133,48 @@ class STAREDataModule(pl.LightningDataModule):
             self._create_data_info()
                 
     def _download(self):
-        for directory in [self.image_dir, self.label_dir_ah, self.label_dir_vk]:
-            os.makedirs(directory, exist_ok=True)
+        image_dir = os.path.join(self.data_dir, 'images')
+        label_dir_ah = os.path.join(self.data_dir, 'labels-ah')
+        label_dir_vk = os.path.join(self.data_dir, 'labels-vk')
+        for directory in [image_dir, label_dir_ah, label_dir_vk]:
+            os.makedirs( directory, exist_ok=True)
            
         image_src = 'https://cecas.clemson.edu/~ahoover/stare/images/all-images.zip'
         print('Downloading', image_src)
-        image_file = wget.download(image_src, self.image_dir)
+        image_file = os.path.join(self.data_dir, 'all-images.zip')
+        #wget.download(image_src, self.data_dir)
         image_file_sha256 = '6428ecc394f1b49a7192134990934f62fcd7d36110fd7c344b912dc43925e853'
-        if not self._check_sha256(image_file, image_file_sha256):
+        if not verify_sha256(image_file, image_file_sha256):
             raise ValueError(
                 f'Downloaded all-images.zip file: "{image_file}" does not match expected checksum'
             )
         print(f'{image_file} checksum match')
-        self._extract_image_archive(image_file, self.image_dir)
+        with ZipFile(image_file) as archive:
+            archive.extractall(image_dir)
 
         ah_src = 'https://cecas.clemson.edu/~ahoover/stare/probing/labels-ah.tar'
         print('Downloading', ah_src)
-        ah_file = wget.download(ah_src, self.label_dir_ah)
+        ah_file = os.path.join(self.data_dir, 'labels-ah.tar')
+        # wget.download(ah_src, self.data_dir)
         ah_file_sha256 = 'ebf2f1e17ca955f24579d9edd990e2dae79a5c82def69f0985d8e24f826ddd2f'
-        if not self._check_sha256(ah_file, ah_file_sha256):
+        if not verify_sha256(ah_file, ah_file_sha256):
             raise ValueError(
                 f'Downloaded labels-ah.tar file: "{ah_file}" does not match expected checksum'
             )
         print(f'{ah_file} checksum match')
-        self._extract_label_archive(ah_file, self.label_dir_ah)
+        self._extract_label_archive(ah_file, label_dir_ah)
 
         vk_src = 'https://cecas.clemson.edu/~ahoover/stare/probing/labels-vk.tar'
         print('Downloading', vk_src)
-        vk_file = wget.download(vk_src, self.label_dir_vk)
+        vk_file = os.path.join(self.data_dir, 'labels-vk.tar')
+        # wget.download(vk_src, self.data_dir)
         vk_file_sha256 = '47474a701536b0cfdb369fdce012be36141e9f44d80387f0179446b5cb0f5576'
-        if not self._check_sha256(vk_file, vk_file_sha256):
+        if not verify_sha256(vk_file, vk_file_sha256):
             raise ValueError(
                 f'Downloaded labels-vk.tar file: "{vk_file}" does not match expected checksum'
             )
         print(f'{vk_file} checksum match')
-        self._extract_label_archive(vk_file, self.label_dir_vk)
-
-    def _check_sha256(self, path, checksum):
-        # pylint: disable=no-self-use
-        hasher = hashlib.sha256()
-        with open(path, 'r+b') as infile:
-            mmapped = mmap.mmap(infile.fileno(), 0)
-            hasher.update(mmapped)
-        return hasher.hexdigest() == checksum
-        
-    def _extract_image_archive(self, archive_path, outdir):        
-        '''The STARE images are in zip archive containing ppm images.
-        We trust that the archive is as expected, so only call this if the check sums match'''
-        # pylint: disable=no-self-use
-        with ZipFile(archive_path) as archive:
-            archive.extractall(outdir)
+        self._extract_label_archive(vk_file, label_dir_vk)
         
         
     def _extract_label_archive(self, archive_path, outdir):
@@ -204,131 +200,97 @@ class STAREDataModule(pl.LightningDataModule):
 
 
     def _prepare_data_for_processing(self):
+        # pylint: disable=too-many-locals
         # The images are stored as 2D 8-bit unsiged RGB images in ppm format. We want to use
         # TorchIO that does not handle ppm, so we convert everything to png images that are
         # handled by TorchIO.
         # Only 20 images have reference segmentations, so to simplify processing we create fake
         # segmentations for the rest and use a weight map to control which pixel predictions should
         # be included in the loss.
-        imagenames = [
-            os.path.splitext(os.path.basename(path))[0]
-            for path in glob.glob(os.path.join(self.image_dir, '*.ppm'))
-        ]            
-        for imagename in imagenames:
-            ppm_path = os.path.join(self.image_dir, imagename + '.ppm')
-            png_path = os.path.join(self.image_dir, imagename + '.png')
+        assert self.annotation_merge_style in ('bitmask', 'union', 'intersection')
+        
+        image_dir = os.path.join(self.data_dir, 'images')
+        fov_dir = os.path.join(self.data_dir, 'fov')
+        label_dir_ah = os.path.join(self.data_dir, 'labels-ah')
+        label_dir_vk = os.path.join(self.data_dir, 'labels-vk')
+        annotation_dir = os.path.join(self.data_dir, 'labels-merged')
+        for directory in [fov_dir, annotation_dir]:
+            os.makedirs(directory, exist_ok=True)
+
+        for imagename in [f'im{i:04d}' for i in self.labeled + self.unlabeled]:
+            ppm_path = os.path.join(image_dir, imagename + '.ppm')
+            png_path = os.path.join(image_dir, imagename + '.png')
             image = imread(ppm_path)
             imsave(png_path, image, check_contrast=False)
             os.remove(ppm_path)
-                
-            for mask_dir, lbl in zip([self.label_dir_ah, self.label_dir_vk], ['ah', 'vk']):
-                mask_ppm_path = os.path.join(mask_dir, f'{imagename}.{lbl}.ppm' )
-                mask_png_path = os.path.join(mask_dir, f'{imagename}.{lbl}.png' )
-                if os.path.exists(mask_ppm_path):
-                    mask = imread(mask_ppm_path)
-                    weights = np.ones_like(mask)                    
-                else:
-                    mask = np.zeros(image.shape, dtype='uint8')
-                    weights = np.zeros_like(mask)                    
-                imsave(mask_png_path, mask, check_contrast=False)
-                if os.path.exists(mask_ppm_path):
-                    os.remove(mask_ppm_path)                    
-                weights_path = os.path.join(mask_dir, f'{imagename}.{lbl}.weights.png')
-                imsave(weights_path, weights, check_contrast=False)
-                
-                    
 
+            ah_path = os.path.join(label_dir_ah, f'{imagename}.ah.ppm' )
+            vk_path = os.path.join(label_dir_vk, f'{imagename}.vk.ppm' )
+            if os.path.exists(ah_path):
+                ah_mask = (imread(ah_path) > 0).astype('uint8')
+            else:
+                ah_mask = np.zeros(image.shape[:2], dtype='uint8')
+            if os.path.exists(vk_path):
+                vk_mask = (imread(vk_path) > 0).astype('uint8')
+            else:
+                vk_mask = np.zeros(image.shape[:2], dtype='uint8')
+
+            # Merge annotations
+            if self.annotation_merge_style == 'bitmask':
+                mask = ah_mask + 2*vk_mask
+            elif self.annotation_merge_style == 'union':
+                mask = np.logical_or(ah_mask, vk_mask).astype('uint8')
+            else:
+                mask = np.logical_and(ah_mask, vk_mask).astype('uint8')
+            annotation_path = os.path.join(annotation_dir,
+                                           f'{imagename}.{self.annotation_merge_style}.png')
+            imsave(annotation_path, mask, check_contrast=False)
+
+            # Create weights
+            if np.any(mask):
+                weights = np.ones_like(mask)
+            else:
+                weights = np.zeros_like(mask)
+            weights_path = os.path.join(annotation_dir,
+                                        f'{imagename}.{self.annotation_merge_style}.weight.png')
+            imsave(weights_path, weights, check_contrast=False)
+
+            # Create FOVs
+            # TODO: Find FOVs
+            fov = np.ones_like(mask)
+            fov_path = os.path.join(fov_dir, f'{imagename}.fov.png')
+            imsave(fov_path, fov, check_contrast=False)
+
+            
     def _create_data_info(self):
-        imagenames = [
-            os.path.splitext(os.path.basename(path))[0]
-            for path in glob.glob(os.path.join(self.image_dir, '*.png'))
-        ]
-        random.shuffle(imagenames)
-        n_images = len(imagenames)
-        n_train = round(self.train_ratio * n_images)
-        n_val = round(self.val_ratio * n_images)
-        n_test = n_images - n_val - n_train
-        datasets = ['train']*n_train + ['validation']*n_val + ['test']*n_test
+        # pylint: disable=too-many-locals
+        assert self.annotation_merge_style in ('bitmask', 'union', 'intersection')
+
+        random.shuffle(self.labeled)
+        n_unlabeled = len(self.unlabeled)
+        n_labeled = len(self.labeled)
+        n_train = round(self.train_ratio * n_labeled)
+        n_val = round(self.val_ratio * n_labeled)
+        n_test = n_labeled - n_val - n_labeled
+        datasets = ['train']*(n_unlabeled+n_train) + ['validation']*n_val + ['test']*n_test
+        
+        image_paths, fov_paths, annotation_paths, weight_paths = [], [], [], []
+        image_dir = os.path.join(self.data_dir, 'images')
+        fov_dir = os.path.join(self.data_dir, 'fov')        
+        annotation_dir = os.path.join(self.data_dir, 'labels-merged')        
+        for im_number in self.unlabeled + self.labeled:
+            im_name = f'im{im_number:04d}'
+            image_paths.append(os.path.join(image_dir, f'{im_name}.png'))
+            fov_paths.append(os.path.join(fov_dir, f'{im_name}.fov.png'))
+            annotation_paths.append(
+                os.path.join(annotation_dir, f'{im_name}.{self.annotation_merge_style}.png')
+            )
+            weight_paths.append(
+                os.path.join(annotation_dir, f'{im_name}.{self.annotation_merge_style}.weight.png')
+            )            
+
         with open(self.data_info_path, 'w', newline='', encoding='utf-8') as outfile:
             writer = csv.writer(outfile)
-            writer.writerow(['dataset', 'imagename'])
-            writer.writerows(zip(datasets, imagenames))                
-                    
-    def setup(self, stage=None):
-        # pylint: disable=too-many-branches
-        data_info = pd.read_csv(self.data_info_path)
-
-        # If we are being called by a lightning Trainer we only make the
-        # relevant datasets. Otherwise (stage is None) we make everything,
-        if stage == 'fit':
-            data_info = data_info[(data_info['dataset'] == 'train') |
-                                  (data_info['dataset'] == 'validation')]
-        elif stage == 'validate':
-            data_info = data_info[data_info['dataset'] == 'validation']
-        elif stage == 'test':
-            data_info = data_info[data_info['dataset'] == 'test']
-        elif stage == 'predict':
-            data_info = data_info[data_info['dataset'] == 'predict']
-        
-        # Now we can create the actual samples
-        samples = {
-            'train' : [],
-            'validation' : [],
-            'test' : [],
-            'predict' : []
-        }
-        for row in data_info.itertuples():
-            image_path = os.path.join(self.image_dir, f'{row.imagename}.png')
-            mask_ah_path = os.path.join(self.label_dir_ah, f'{row.imagename}.ah.png')
-            weight_ah_path = os.path.join(self.label_dir_ah, f'{row.imagename}.ah.weights.png')
-            mask_vk_path = os.path.join(self.label_dir_vk, f'{row.imagename}.vk.png')
-            weight_vk_path = os.path.join(self.label_dir_vk, f'{row.imagename}.vk.weights.png')                             
-            subject_kwargs = {
-                'image' : tio.ScalarImage(image_path),
-                'mask-1' : tio.LabelMap(mask_ah_path),
-                'mask-1-weight' : tio.LabelMap(weight_ah_path),
-                'mask-2' : tio.LabelMap(mask_vk_path),
-                'mask-2-weight' : tio.LabelMap(weight_vk_path)
-            }
-            try:
-                samples[row.dataset].append(tio.Subject(**subject_kwargs))
-            except KeyError:
-                print('Uknown dataset', row.dataset, 'Expected train, validation, test or predict')
-                continue
-
-        if self.augment is None:
-            train_transform = self.preprocess
-        else:
-            if self.preprocess is None:
-                train_transform = self.augment
-            else:
-                train_transform = tio.Compose([self.preprocess, self.augment])
-
-        if len(samples['train']) > 0:
-            self.datasets['train'] = tio.SubjectsDataset(samples['train'],
-                                                         transform=train_transform)
-        for ds_name in ['validation', 'test', 'predict']:
-            if len(samples[ds_name]) > 0:
-                self.datasets[ds_name] = tio.SubjectsDataset(samples[ds_name],
-                                                             transform=self.preprocess)
-
-    def _get_dataloader(self, ds_name, shuffle=False):
-        if not ds_name in self.datasets:
-            raise ValueError(f'No {ds_name} data available. Ensure that at least one row in '
-                             '"{self.data_info_path}" has dataset = {ds_name}')
-        return DataLoader(self.datasets[ds_name],
-                          batch_size=self.batch_size,
-                          num_workers=self.num_workers,
-                          shuffle=shuffle)
-        
-    def train_dataloader(self):
-        return self._get_dataloader('train', True)
-    
-    def val_dataloader(self):
-        return self._get_dataloader('validation', False)
-
-    def test_dataloader(self):
-        return self._get_dataloader('test', False)
-
-    def predict_dataloader(self):
-        return self._get_dataloader('predict', False)
+            writer.writerow(['dataset', 'image_path', 'fov_path', 'annotation_path', 'weight_path'])
+            writer.writerows(zip(datasets, image_paths, fov_paths, annotation_paths, weight_paths))
+            
