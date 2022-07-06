@@ -5,4 +5,7 @@ Currently includes
   * HRF
   * STARE
 '''
-__version__ = '0.1'
+from .chase_data_module import CHASEDB1DataModule
+from .drive_data_module import DRIVEDataModule
+from .hrf_data_module import HRFDataModule
+from .stare_data_module import STAREDataModule
