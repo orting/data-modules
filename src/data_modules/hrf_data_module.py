@@ -1,4 +1,3 @@
-# pylint: disable=trailing-whitespace
 '''See class HRFDataModule'''
 import os
 import csv

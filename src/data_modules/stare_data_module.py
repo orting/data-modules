@@ -1,4 +1,3 @@
-# pylint: disable=trailing-whitespace
 '''See class STAREDataModule'''
 import os
 import tarfile

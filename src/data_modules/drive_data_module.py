@@ -1,4 +1,3 @@
-# pylint: disable=trailing-whitespace
 '''See class DRIVEDataModule'''
 import os
 import csv

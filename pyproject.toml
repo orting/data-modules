@@ -1,0 +1,28 @@
+[build-system]
+requires = [
+    "setuptools",
+    "wheel"
+]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = [
+    '--verbose',
+    '--runslow',
+    '--outdir=test/out'
+] 
+testpaths = [
+    "test"
+]
+
+[tool.pylint.messages_control] 
+disable = [
+	'trailing-whitespace',
+	'consider-using-generator',
+	'anomalous-backslash-in-string',
+	'duplicate-code'
+        ]
+generated-members = [
+                  'torch.',
+                  ]	

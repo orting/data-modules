@@ -1,4 +1,3 @@
-# pylint: disable=trailing-whitespace
 '''See class RetinaDataModule'''
 import pandas as pd
 import pytorch_lightning as pl

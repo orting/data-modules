@@ -1,5 +1,4 @@
 '''Utility functions for data modules'''
-# pylint: disable=trailing-whitespace
 import mmap
 import hashlib
 
