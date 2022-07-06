@@ -52,13 +52,12 @@ class DRIVEDataModule(RetinaDataModule):
         data_info_path : str
           EITHER
            an existing csv file containing *at least* the following named columns
-             dataset, imagename
+             dataset,image_path,fov_path,annotation_path,weight_path
            all other columns are ignored.
            The dataset column must contain values from {train, validation, test, predict}.
-           The imagename column must match the imagenames of the DRIVE images.
           OR
-           a path to store data info in. If the file exists it will be used, if it does not exist
-           it will be generated.
+           a path to store data info in.
+          If the file exists it will be used, if it does not exist it will be generated.
         
         batch_size : int
           Batch size
