@@ -59,7 +59,7 @@ class RetinaDataModule(pl.LightningDataModule):
             subject_kwargs = {
                 'image' : tio.ScalarImage(row.image_path),
                 'fov' : tio.LabelMap(row.fov_path),
-                'annnotation' : tio.LabelMap(row.annotation_path),
+                'annotation' : tio.LabelMap(row.annotation_path),
                 'weight' : tio.LabelMap(row.weight_path),
             }
             try:
