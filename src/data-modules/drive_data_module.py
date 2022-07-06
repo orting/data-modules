@@ -111,6 +111,12 @@ class DRIVEDataModule(RetinaDataModule):
         self.num_workers = num_workers
         
     def prepare_data(self):
+        '''Do the following
+        1. Download data
+        2. Convert ppm to png, create empty annotations for image that do not have
+           annotations, create annotation weights
+        3. Create data info file
+        '''
         if self.download:
             self._download()
 
