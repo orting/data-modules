@@ -11,8 +11,8 @@ import wget
 import numpy as np
 from skimage.io import imread, imsave
 
-from util import verify_sha256
-from retina_data_module import RetinaDataModule
+from .util import verify_sha256
+from .retina_data_module import RetinaDataModule
 
 __all__ = [
     'STAREDataModule'
@@ -32,7 +32,7 @@ class STAREDataModule(RetinaDataModule):
     convergence of the blood vessels", IEEE Transactions on Medical Imaging , vol. 22 no. 8, 
     pp. 951-958, August 2003.
     '''
-    # pylint: disable=too-many-instance-attributes
+    # pylint: disable=too-many-instance-attributes, too-few-public-methods
     def __init__(self,
                  data_dir,
                  data_info_path,
@@ -123,6 +123,12 @@ class STAREDataModule(RetinaDataModule):
         ]
         
     def prepare_data(self):
+        '''Do the following
+        1. Download data
+        2. Convert ppm to png, create empty annotations for image that do not have
+           annotations, create annotation weights, merge_annotations
+        3. Create data info file
+        '''
         if self.download:
             self._download()
 
@@ -141,8 +147,7 @@ class STAREDataModule(RetinaDataModule):
            
         image_src = 'https://cecas.clemson.edu/~ahoover/stare/images/all-images.zip'
         print('Downloading', image_src)
-        image_file = os.path.join(self.data_dir, 'all-images.zip')
-        #wget.download(image_src, self.data_dir)
+        image_file = wget.download(image_src, self.data_dir)
         image_file_sha256 = '6428ecc394f1b49a7192134990934f62fcd7d36110fd7c344b912dc43925e853'
         if not verify_sha256(image_file, image_file_sha256):
             raise ValueError(
@@ -154,8 +159,7 @@ class STAREDataModule(RetinaDataModule):
 
         ah_src = 'https://cecas.clemson.edu/~ahoover/stare/probing/labels-ah.tar'
         print('Downloading', ah_src)
-        ah_file = os.path.join(self.data_dir, 'labels-ah.tar')
-        # wget.download(ah_src, self.data_dir)
+        ah_file = wget.download(ah_src, self.data_dir)
         ah_file_sha256 = 'ebf2f1e17ca955f24579d9edd990e2dae79a5c82def69f0985d8e24f826ddd2f'
         if not verify_sha256(ah_file, ah_file_sha256):
             raise ValueError(
@@ -166,8 +170,7 @@ class STAREDataModule(RetinaDataModule):
 
         vk_src = 'https://cecas.clemson.edu/~ahoover/stare/probing/labels-vk.tar'
         print('Downloading', vk_src)
-        vk_file = os.path.join(self.data_dir, 'labels-vk.tar')
-        # wget.download(vk_src, self.data_dir)
+        vk_file = wget.download(vk_src, self.data_dir)
         vk_file_sha256 = '47474a701536b0cfdb369fdce012be36141e9f44d80387f0179446b5cb0f5576'
         if not verify_sha256(vk_file, vk_file_sha256):
             raise ValueError(
@@ -182,7 +185,6 @@ class STAREDataModule(RetinaDataModule):
         This method will gunzip the ppm images outdir
         We trust that the archive is as expected, so only call this if the check sums match
         '''
-        # pylint: disable=no-self-use
         with tarfile.open(archive_path) as archive:
             for member in archive.getmembers():
                 with archive.extractfile(member) as member_file:                    
