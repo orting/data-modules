@@ -22,10 +22,12 @@ class CHASEDB1DataModule(RetinaDataModule):
 
     https://blogs.kingston.ac.uk/retinal/chasedb1/
 
-    M. M. Fraz et al., 
-    An Ensemble Classification-Based Approach Applied to Retinal Blood Vessel Segmentation, 
-    IEEE Transactions on Biomedical Engineering, vol. 59, no. 9, pp. 2538-2548, Sept. 2012,
-    doi: 10.1109/TBME.2012.2205687.
+    Christopher G. Owen, Alicja R. Rudnicka, Claire M. Nightingale, Robert Mullen, Sarah A. Barman,
+    Naveed Sattar, Derek G. Cook, and Peter H. Whincup
+    Retinal Arteriolar Tortuosity and Cardiovascular Risk Factors in a Multi-Ethnic Population Study
+    of 10-Year-Old Children; the Child Heart and Health Study in England (CHASE)
+    Arteriosclerosis, Thrombosis, and Vascular Biology, vol. 31, no. 8, pp. 1933-1938, 2011
+    http://dx.doi.org/10.1161/ATVBAHA.111.225219
     '''
     # pylint: disable=too-many-instance-attributes, too-few-public-methods
     def __init__(self,
