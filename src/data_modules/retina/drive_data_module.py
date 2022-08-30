@@ -30,8 +30,7 @@ class DRIVEDataModule(RetinaDataModule):
                  download=False,
                  prepare_data_for_processing=False,
                  use_test_as_unlabeled_train_data=True,
-                 preprocessing_transform=None,
-                 augmentation_transform=None,
+                 transforms=None,
                  train_ratio=0.4,
                  val_ratio=0.2,
                  num_workers=1,
@@ -74,11 +73,11 @@ class DRIVEDataModule(RetinaDataModule):
           If True, convert ppm to png, create empty annotations for image that do not have
           annotations, create annotation weights
 
-        preprocessing_transform : torchio.transforms.Transform, optional
-          Transforms to apply to all images
-
-        augmentation_transform : torchio.transforms.Transform, optional
-          Transforms to apply to training images
+        transforms : dict of callables, optional
+          Dictionary of transforms to apply to each dataset. Example: If
+            transforms = {'train' : <some-transform>}
+          then <some-transform> will be applied to the "train" dataset and all other datasets will
+          not be transformed.
 
         train_ratio : float in [0,1], optional
           How large a proportion of the 20 train images to use for training. Must satisfy
@@ -88,7 +87,7 @@ class DRIVEDataModule(RetinaDataModule):
           `use_test_as_unlabeled_train_data` = True, they are always used for training.
 
         val_ratio : float in [0,1], optional
-          How large a proportion of the train images to use for validation.
+          How large a proportion of the 20 train images to use for validation.
 
         num_workers : int, optional
           How many workers to use for generating data          
@@ -96,8 +95,6 @@ class DRIVEDataModule(RetinaDataModule):
         # pylint: disable=too-many-arguments
         super().__init__()
         self.data_dir = data_dir
-        self.preprocess = preprocessing_transform
-        self.augment = augmentation_transform
         self.data_info_path = data_info_path
         self.batch_size = batch_size
         self.download = download
@@ -107,6 +104,8 @@ class DRIVEDataModule(RetinaDataModule):
         self.val_ratio = val_ratio
         self.datasets = {}
         self.num_workers = num_workers
+        if transforms is not None:
+            self.transforms = transforms
         
     def prepare_data(self):
         '''Do the following
@@ -164,7 +163,7 @@ class DRIVEDataModule(RetinaDataModule):
             annotation_dir = os.path.join(self.data_dir, 'test', 'dummy-annotations')
             os.makedirs(annotation_dir, exist_ok=True)
             for imagename in [f'{i:02d}' for i in range(1, 21)]:
-                size = Image.open(os.path.join(image_dir, f'{imagename}_test.tif')).size
+                size = Image.open(os.path.join(image_dir, f'{imagename}_test.tif')).size[::-1]
                 dummy = np.zeros(size, dtype='uint8')
                 imsave(os.path.join(annotation_dir, f'{imagename}_dummy.png'), dummy,
                        check_contrast=False)
@@ -174,11 +173,10 @@ class DRIVEDataModule(RetinaDataModule):
                 fov_gif_path = os.path.join(fov_dir, f'{imagename}_test_mask.gif')
                 fov_png_path = os.path.join(fov_dir, f'{imagename}_test_mask.png')
                 imsave(fov_png_path, imread(fov_gif_path), check_contrast=False)
-                os.remove(fov_gif_path)
 
         for imagename in [f'{i:02d}' for i in range(21, 41)]:
             image_dir = os.path.join(self.data_dir, 'training', 'images')
-            size = Image.open(os.path.join(image_dir, f'{imagename}_training.tif')).size
+            size = Image.open(os.path.join(image_dir, f'{imagename}_training.tif')).size[::-1]
 
             annotation_dir = os.path.join(self.data_dir, 'training', '1st_manual')
             weight = np.ones(size, dtype='uint8')
@@ -188,13 +186,11 @@ class DRIVEDataModule(RetinaDataModule):
             annotation_gif_path = os.path.join(annotation_dir, f'{imagename}_manual1.gif')
             annotation_png_path = os.path.join(annotation_dir, f'{imagename}_manual1.png')
             imsave(annotation_png_path, imread(annotation_gif_path), check_contrast=False)
-            os.remove(annotation_gif_path)
 
             fov_dir = os.path.join(self.data_dir, 'training', 'mask')
             fov_gif_path = os.path.join(fov_dir, f'{imagename}_training_mask.gif')
             fov_png_path = os.path.join(fov_dir, f'{imagename}_training_mask.png')
             imsave(fov_png_path, imread(fov_gif_path), check_contrast=False)
-            os.remove(fov_gif_path)
                             
     def _create_data_info(self):
         '''There are 20 train and 20 test images in DRIVE.
