@@ -39,8 +39,7 @@ class STAREDataModule(RetinaDataModule):
                  download=False,
                  prepare_data_for_processing=False,
                  annotation_merge_style='bitmask',
-                 preprocessing_transform=None,
-                 augmentation_transform=None,
+                 transforms=None,
                  train_ratio=0.4,
                  val_ratio=0.2,
                  num_workers=1,
@@ -83,12 +82,11 @@ class STAREDataModule(RetinaDataModule):
           'union' : The union of the two annotations
           'intersection' : The intersection of the two annotations
                           
-
-        preprocessing_transform : torchio.transforms.Transform, optional
-          Transforms to apply to all images
-
-        augmentation_transform : torchio.transforms.Transform, optional
-          Transforms to apply to training images
+        transforms : dict of callables, optional
+          Dictionary of transforms to apply to each dataset. Example: If
+            transforms = {'train' : <some-transform>}
+          then <some-transform> will be applied to the "train" dataset and all other datasets will
+          not be transformed.
 
         train_ratio : float in [0,1], optional
           How much data to use for training when generating datainfo. Must satisfy
@@ -104,8 +102,6 @@ class STAREDataModule(RetinaDataModule):
         # pylint: disable=too-many-arguments
         super().__init__()
         self.data_dir = data_dir
-        self.preprocess = preprocessing_transform
-        self.augment = augmentation_transform
         self.data_info_path = data_info_path
         self.batch_size = batch_size
         self.download = download
@@ -119,6 +115,8 @@ class STAREDataModule(RetinaDataModule):
         self.unlabeled = [
             i for i in range(1, 403) if not i in self.labeled and not i in self.missing
         ]
+        if transforms is not None:
+            self.transforms = transforms
         
     def prepare_data(self):
         '''Do the following

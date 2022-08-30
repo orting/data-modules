@@ -20,6 +20,9 @@ __all__ = [
 class CHASEDB1DataModule(RetinaDataModule):
     '''Data module for loading CHASEDB1 data
 
+    There are 14 subjects with left/right eye images. Each image has two annotations.
+    Field of view masks are generated.
+
     https://blogs.kingston.ac.uk/retinal/chasedb1/
 
     Christopher G. Owen, Alicja R. Rudnicka, Claire M. Nightingale, Robert Mullen, Sarah A. Barman,
@@ -38,8 +41,7 @@ class CHASEDB1DataModule(RetinaDataModule):
                  prepare_data_for_processing=False,
                  stratify_subjects=True,
                  annotation_merge_style='bitmask',
-                 preprocessing_transform=None,
-                 augmentation_transform=None,
+                 transforms=None,
                  train_ratio=0.4,
                  val_ratio=0.2,
                  num_workers=1,
@@ -80,21 +82,19 @@ class CHASEDB1DataModule(RetinaDataModule):
           'union' : The union of the two annotations
           'intersection' : The intersection of the two annotations
 
-        preprocessing_transform : torchio.transforms.Transform, optional
-          Transforms to apply to all images
-
-        augmentation_transform : torchio.transforms.Transform, optional
-          Transforms to apply to training images
+        transforms : dict of callables, optional
+          Dictionary of transforms to apply to each dataset. Example: If
+            transforms = {'train' : <some-transform>}
+          then <some-transform> will be applied to the "train" dataset and all other datasets will
+          not be transformed.
 
         train_ratio : float in [0,1], optional
-          How large a proportion of the 20 train images to use for training. Must satisfy
+          How large a proportion of the images to use for training. Must satisfy
           0 <= `train_ratio` + `val_ratio` <= 1
           test_ratio is given by 1 (1 - `train_ratio` - `val_ratio`)
-          This only concerns how the training images are split. If the test images are included,
-          `use_test_as_unlabeled_train_data` = True, they are always used for training.
 
         val_ratio : float in [0,1], optional
-          How large a proportion of the train images to use for validation.
+          How large a proportion of the images to use for validation.
 
         num_workers : int, optional
           How many workers to use for generating data          
@@ -131,8 +131,6 @@ class CHASEDB1DataModule(RetinaDataModule):
         # pylint: disable=too-many-arguments
         super().__init__()
         self.data_dir = data_dir
-        self.preprocess = preprocessing_transform
-        self.augment = augmentation_transform
         self.data_info_path = data_info_path
         self.batch_size = batch_size
         self.download = download
@@ -143,6 +141,8 @@ class CHASEDB1DataModule(RetinaDataModule):
         self.val_ratio = val_ratio
         self.datasets = {}
         self.num_workers = num_workers
+        if transforms is not None:
+            self.transforms = transforms
         
     def prepare_data(self):
         '''Do the following

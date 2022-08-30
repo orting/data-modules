@@ -25,8 +25,7 @@ class RetinaDataModule(pl.LightningDataModule):
     def __init__(self):
         super().__init__()
         self.data_info_path = None
-        self.augment = None
-        self.preprocess = None
+        self.transforms = {}
         self.datasets = {}
         self.batch_size = None
         self.num_workers = None
@@ -67,26 +66,16 @@ class RetinaDataModule(pl.LightningDataModule):
                 print('Uknown dataset', row.dataset, 'Expected train, validation, test or predict')
                 continue
 
-        if self.augment is None:
-            train_transform = self.preprocess
-        else:
-            if self.preprocess is None:
-                train_transform = self.augment
-            else:
-                train_transform = tio.Compose([self.preprocess, self.augment])
-
-        if len(samples['train']) > 0:
-            self.datasets['train'] = tio.SubjectsDataset(samples['train'],
-                                                         transform=train_transform)
-        for ds_name in ['validation', 'test', 'predict']:
+            
+        for ds_name in ['train', 'validation', 'test', 'predict']:
             if len(samples[ds_name]) > 0:
-                self.datasets[ds_name] = tio.SubjectsDataset(samples[ds_name],
-                                                             transform=self.preprocess)
+                transform = self.transforms[ds_name] if ds_name in self.transforms else None
+                self.datasets[ds_name] = tio.SubjectsDataset(samples[ds_name],transform=transform)
 
     def _get_dataloader(self, ds_name, shuffle=False):
         if not ds_name in self.datasets:
             raise ValueError(f'No {ds_name} data available. Ensure that at least one row in '
-                             '"{self.data_info_path}" has dataset = {ds_name}')
+                             f'"{self.data_info_path}" has dataset = {ds_name}')
         return DataLoader(self.datasets[ds_name],
                           batch_size=self.batch_size,
                           num_workers=self.num_workers,

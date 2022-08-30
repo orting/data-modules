@@ -36,8 +36,7 @@ class HRFDataModule(RetinaDataModule):
                  download=False,
                  prepare_data_for_processing=False,
                  stratify_pathologies=False,
-                 preprocessing_transform=None,
-                 augmentation_transform=None,
+                 transforms=None,
                  train_ratio=0.4,
                  val_ratio=0.2,
                  num_workers=1,
@@ -75,11 +74,11 @@ class HRFDataModule(RetinaDataModule):
           diabetic retinopathy, glaucomatous} in train, validation and test data.
           If False, patient groups are ignored for randomization in train, validation and test.
 
-        preprocessing_transform : torchio.transforms.Transform, optional
-          Transforms to apply to all images
-
-        augmentation_transform : torchio.transforms.Transform, optional
-          Transforms to apply to training images
+        transforms : dict of callables, optional
+          Dictionary of transforms to apply to each dataset. Example: If
+            transforms = {'train' : <some-transform>}
+          then <some-transform> will be applied to the "train" dataset and all other datasets will
+          not be transformed.
 
         train_ratio : float in [0,1], optional
           How large a proportion of the 20 train images to use for training. Must satisfy
@@ -97,8 +96,6 @@ class HRFDataModule(RetinaDataModule):
         # pylint: disable=too-many-arguments
         super().__init__()
         self.data_dir = data_dir
-        self.preprocess = preprocessing_transform
-        self.augment = augmentation_transform
         self.data_info_path = data_info_path
         self.batch_size = batch_size
         self.prepare_data_for_processing = prepare_data_for_processing        
@@ -108,6 +105,8 @@ class HRFDataModule(RetinaDataModule):
         self.val_ratio = val_ratio
         self.datasets = {}
         self.num_workers = num_workers
+        if transforms is not None:
+            self.transforms = transforms
         
     def prepare_data(self):
         '''Do the following
