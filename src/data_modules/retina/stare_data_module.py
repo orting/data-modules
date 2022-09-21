@@ -30,6 +30,8 @@ class STAREDataModule(RetinaDataModule):
     A. Hoover and M. Goldbaum, "Locating the optic nerve in a retinal image using the fuzzy
     convergence of the blood vessels", IEEE Transactions on Medical Imaging , vol. 22 no. 8, 
     pp. 951-958, August 2003.
+
+    Unusued kwargs are passed on to RetinaDataModule
     '''
     # pylint: disable=too-many-instance-attributes, too-few-public-methods
     def __init__(self,
@@ -39,11 +41,10 @@ class STAREDataModule(RetinaDataModule):
                  download=False,
                  prepare_data_for_processing=False,
                  annotation_merge_style='bitmask',
-                 transforms=None,
                  train_ratio=0.4,
                  val_ratio=0.2,
-                 num_workers=1,
-    ):
+                 **kwargs,
+                 ):
         '''
         Parameters
         ----------
@@ -82,12 +83,6 @@ class STAREDataModule(RetinaDataModule):
           'union' : The union of the two annotations
           'intersection' : The intersection of the two annotations
                           
-        transforms : dict of callables, optional
-          Dictionary of transforms to apply to each dataset. Example: If
-            transforms = {'train' : <some-transform>}
-          then <some-transform> will be applied to the "train" dataset and all other datasets will
-          not be transformed.
-
         train_ratio : float in [0,1], optional
           How much data to use for training when generating datainfo. Must satisfy
           0 <= `train_ratio` + `val_ratio` <= 1
@@ -96,27 +91,23 @@ class STAREDataModule(RetinaDataModule):
         val_ratio : float in [0,1], optional
           How much data to use for validation when generating datainfo. 
 
-        num_workers : int, optional
-          How many workers to use for generating data          
+        See also
+        --------
+        RetinaDataModule
         '''
         # pylint: disable=too-many-arguments
-        super().__init__()
+        super().__init__(data_info_path, batch_size, **kwargs)
         self.data_dir = data_dir
-        self.data_info_path = data_info_path
-        self.batch_size = batch_size
         self.download = download
         self.prepare_data_for_processing = prepare_data_for_processing
         self.annotation_merge_style = annotation_merge_style
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
-        self.num_workers = num_workers
         self.labeled = [1,2,3,4,5,44,77,81,82,139,162,163,235,236,239,240,255,291,319,324]
         self.missing = [47,108,109,144,167]
         self.unlabeled = [
             i for i in range(1, 403) if not i in self.labeled and not i in self.missing
         ]
-        if transforms is not None:
-            self.transforms = transforms
         
     def prepare_data(self):
         '''Do the following
@@ -220,7 +211,7 @@ class STAREDataModule(RetinaDataModule):
             png_path = os.path.join(image_dir, imagename + '.png')
             image = imread(ppm_path)
             imsave(png_path, image, check_contrast=False)
-            os.remove(ppm_path)
+            #os.remove(ppm_path)
 
             ah_path = os.path.join(label_dir_ah, f'{imagename}.ah.ppm' )
             vk_path = os.path.join(label_dir_vk, f'{imagename}.vk.ppm' )
@@ -269,7 +260,7 @@ class STAREDataModule(RetinaDataModule):
         n_labeled = len(self.labeled)
         n_train = round(self.train_ratio * n_labeled)
         n_val = round(self.val_ratio * n_labeled)
-        n_test = n_labeled - n_val - n_labeled
+        n_test = n_labeled - n_val - n_train
         datasets = ['train']*(n_unlabeled+n_train) + ['validation']*n_val + ['test']*n_test
         
         image_paths, fov_paths, annotation_paths, weight_paths = [], [], [], []
