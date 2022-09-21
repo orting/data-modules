@@ -22,10 +22,11 @@ class HRFDataModule(RetinaDataModule):
     '''Data module for loading High-Resolution Fundus (HRF) data
     https://www5.cs.fau.de/research/data/fundus-images/
 
-
     Budai, Attila; Bock, Rüdiger; Maier, Andreas; Hornegger, Joachim; Michelson, Georg.
     Robust Vessel Segmentation in Fundus Images.
     International Journal of Biomedical Imaging, vol. 2013, 2013 
+
+    Unusued kwargs are passed on to RetinaDataModule.
 
     '''
     # pylint: disable=too-many-instance-attributes, too-few-public-methods
@@ -36,11 +37,10 @@ class HRFDataModule(RetinaDataModule):
                  download=False,
                  prepare_data_for_processing=False,
                  stratify_pathologies=False,
-                 transforms=None,
                  train_ratio=0.4,
                  val_ratio=0.2,
-                 num_workers=1,
-    ):
+                 **kwargs,
+                ):
         '''
         Parameters
         ----------
@@ -74,12 +74,6 @@ class HRFDataModule(RetinaDataModule):
           diabetic retinopathy, glaucomatous} in train, validation and test data.
           If False, patient groups are ignored for randomization in train, validation and test.
 
-        transforms : dict of callables, optional
-          Dictionary of transforms to apply to each dataset. Example: If
-            transforms = {'train' : <some-transform>}
-          then <some-transform> will be applied to the "train" dataset and all other datasets will
-          not be transformed.
-
         train_ratio : float in [0,1], optional
           How large a proportion of the 20 train images to use for training. Must satisfy
           0 <= `train_ratio` + `val_ratio` <= 1
@@ -90,25 +84,20 @@ class HRFDataModule(RetinaDataModule):
         val_ratio : float in [0,1], optional
           How large a proportion of the train images to use for validation.
 
-        num_workers : int, optional
-          How many workers to use for generating data          
+        See also
+        --------
+        RetinaDataModule
         '''
         # pylint: disable=too-many-arguments
-        super().__init__()
+        super().__init__(data_info_path, batch_size, **kwargs)
         self.data_dir = data_dir
-        self.data_info_path = data_info_path
-        self.batch_size = batch_size
         self.prepare_data_for_processing = prepare_data_for_processing        
         self.stratify_pathologies = stratify_pathologies
         self.download = download
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
-        self.datasets = {}
-        self.num_workers = num_workers
-        if transforms is not None:
-            self.transforms = transforms
         
-    def prepare_data(self):
+    def prepare_data(self, predict=False):
         '''Do the following
         1. Download data
         2. Rename *JPG to jpg, convert *tiff masks to *png, create weights
@@ -121,7 +110,7 @@ class HRFDataModule(RetinaDataModule):
             self._prepare_data_for_processing()
             
         if not os.path.exists(self.data_info_path):
-            self._create_data_info()
+            self._create_data_info(predict)
                 
     def _download(self):
         os.makedirs(self.data_dir, exist_ok=True)
@@ -155,7 +144,7 @@ class HRFDataModule(RetinaDataModule):
             if entry.is_file():
                 annotation = imread(entry.path)
                 imsave(f'{os.path.splitext(entry.path)[0]}.png', annotation, check_contrast=False)
-                os.remove(entry.path)
+                #os.remove(entry.path)
                 weight_path = \
                     os.path.join(weight_dir, f'{os.path.splitext(entry.name)[0]}_weight.png')
                 imsave(weight_path, np.ones_like(annotation, dtype='uint8'), check_contrast=False)
@@ -163,27 +152,30 @@ class HRFDataModule(RetinaDataModule):
         print('Converting field of view masks to png')
         for entry in os.scandir(fov_dir):
             if entry.is_file():
-                fov = imread(entry.path)
+                fov = imread(entry.path)[...,0] # They are stored as RGB
                 imsave(f'{os.path.splitext(entry.path)[0]}.png', fov, check_contrast=False)
-                os.remove(entry.path)
+                #os.remove(entry.path)
 
-    def _create_data_info(self):
+    def _create_data_info(self, predict=False):
         '''There are 45 images in HRF. 15 healthy, 15 diabetic retinopathy, 15 glaucomatous.
         All have a field-of-view (FOV) mask.
         All have a reference segmentation
         '''
         # pylint: disable=too-many-locals
-        if self.stratify_pathologies:
-            n_images = 15 
+        if not predict:
+            if self.stratify_pathologies:
+                n_images = 15 
+            else:
+                n_images = 45
+            n_train = round(self.train_ratio * n_images)
+            n_val = round(self.val_ratio * n_images)
+            n_test = n_images - n_val - n_train
+            datasets = ['train']*n_train + ['validation']*n_val + ['test']*n_test
+            random.shuffle(datasets)
+            if self.stratify_pathologies:
+                datasets = datasets * 3
         else:
-            n_images = 45
-        n_train = round(self.train_ratio * n_images)
-        n_val = round(self.val_ratio * n_images)
-        n_test = n_images - n_val - n_train
-        datasets = ['train']*n_train + ['validation']*n_val + ['test']*n_test
-        random.shuffle(datasets)
-        if self.stratify_pathologies:
-            datasets = datasets * 3
+            datasets = ['predict'] * 45
 
         image_dir = os.path.join(self.data_dir, 'images')
         fov_dir = os.path.join(self.data_dir, 'mask')
