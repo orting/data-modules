@@ -21,6 +21,8 @@ __all__ = [
 class DRIVEDataModule(RetinaDataModule):
     '''Data module for loading DRIVE data
     https://drive.grand-challenge.org/
+
+    Unusued kwargs are passed on to RetinaDataModule
     '''
     # pylint: disable=too-many-instance-attributes
     def __init__(self,
@@ -30,11 +32,10 @@ class DRIVEDataModule(RetinaDataModule):
                  download=False,
                  prepare_data_for_processing=False,
                  use_test_as_unlabeled_train_data=True,
-                 transforms=None,
                  train_ratio=0.4,
                  val_ratio=0.2,
-                 num_workers=1,
-    ):
+                 **kwargs,
+                 ):
         '''
         Parameters
         ----------
@@ -73,12 +74,6 @@ class DRIVEDataModule(RetinaDataModule):
           If True, convert ppm to png, create empty annotations for image that do not have
           annotations, create annotation weights
 
-        transforms : dict of callables, optional
-          Dictionary of transforms to apply to each dataset. Example: If
-            transforms = {'train' : <some-transform>}
-          then <some-transform> will be applied to the "train" dataset and all other datasets will
-          not be transformed.
-
         train_ratio : float in [0,1], optional
           How large a proportion of the 20 train images to use for training. Must satisfy
           0 <= `train_ratio` + `val_ratio` <= 1
@@ -89,23 +84,18 @@ class DRIVEDataModule(RetinaDataModule):
         val_ratio : float in [0,1], optional
           How large a proportion of the 20 train images to use for validation.
 
-        num_workers : int, optional
-          How many workers to use for generating data          
+        See also
+        --------
+        RetinaDataModule
         '''
         # pylint: disable=too-many-arguments
-        super().__init__()
+        super().__init__(data_info_path, batch_size, **kwargs)
         self.data_dir = data_dir
-        self.data_info_path = data_info_path
-        self.batch_size = batch_size
         self.download = download
         self.prepare_data_for_processing = prepare_data_for_processing
         self.use_test_as_unlabeled_train_data = use_test_as_unlabeled_train_data
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
-        self.datasets = {}
-        self.num_workers = num_workers
-        if transforms is not None:
-            self.transforms = transforms
         
     def prepare_data(self):
         '''Do the following

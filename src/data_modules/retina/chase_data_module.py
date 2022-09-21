@@ -31,6 +31,8 @@ class CHASEDB1DataModule(RetinaDataModule):
     of 10-Year-Old Children; the Child Heart and Health Study in England (CHASE)
     Arteriosclerosis, Thrombosis, and Vascular Biology, vol. 31, no. 8, pp. 1933-1938, 2011
     http://dx.doi.org/10.1161/ATVBAHA.111.225219
+
+    Unusued kwargs are passed on to RetinaDataModule
     '''
     # pylint: disable=too-many-instance-attributes, too-few-public-methods
     def __init__(self,
@@ -41,11 +43,10 @@ class CHASEDB1DataModule(RetinaDataModule):
                  prepare_data_for_processing=False,
                  stratify_subjects=True,
                  annotation_merge_style='bitmask',
-                 transforms=None,
                  train_ratio=0.4,
                  val_ratio=0.2,
-                 num_workers=1,
-    ):
+                 **kwargs,
+                 ):
         '''
         Parameters
         ----------
@@ -82,12 +83,6 @@ class CHASEDB1DataModule(RetinaDataModule):
           'union' : The union of the two annotations
           'intersection' : The intersection of the two annotations
 
-        transforms : dict of callables, optional
-          Dictionary of transforms to apply to each dataset. Example: If
-            transforms = {'train' : <some-transform>}
-          then <some-transform> will be applied to the "train" dataset and all other datasets will
-          not be transformed.
-
         train_ratio : float in [0,1], optional
           How large a proportion of the images to use for training. Must satisfy
           0 <= `train_ratio` + `val_ratio` <= 1
@@ -95,9 +90,6 @@ class CHASEDB1DataModule(RetinaDataModule):
 
         val_ratio : float in [0,1], optional
           How large a proportion of the images to use for validation.
-
-        num_workers : int, optional
-          How many workers to use for generating data          
 
         Examples
         --------
@@ -127,22 +119,20 @@ class CHASEDB1DataModule(RetinaDataModule):
         >>> _ = axs[1,1].imshow(weight, cmap='gray', vmin=0, vmax=1)
         >>> plt.show()
 
+
+        See also
+        --------
+        RetinaDataModule
         '''
         # pylint: disable=too-many-arguments
-        super().__init__()
+        super().__init__(data_info_path, batch_size, **kwargs)
         self.data_dir = data_dir
-        self.data_info_path = data_info_path
-        self.batch_size = batch_size
         self.download = download
         self.prepare_data_for_processing = prepare_data_for_processing
         self.stratify_subjects = stratify_subjects
         self.annotation_merge_style = annotation_merge_style
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
-        self.datasets = {}
-        self.num_workers = num_workers
-        if transforms is not None:
-            self.transforms = transforms
         
     def prepare_data(self):
         '''Do the following
