@@ -38,6 +38,7 @@ class BaseDataModule(pl.LightningDataModule):
                  queue_length=300,
                  samples_per_volume=10,
                  shuffle_patches=True,
+                 patch_sampling_label_name=None,
                  ):
         '''
         Parameters
@@ -109,7 +110,7 @@ class BaseDataModule(pl.LightningDataModule):
         self.queue_length = queue_length
         self.samples_per_volume = samples_per_volume
         self.shuffle_patches = shuffle_patches
-        self.patch_sampling_label_name = 'fov'
+        self.patch_sampling_label_name = patch_sampling_label_name
         self.datasets = {}
 
 
