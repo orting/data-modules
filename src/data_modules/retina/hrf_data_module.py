@@ -17,7 +17,6 @@ __all__ = [
     'HRFDataModule'
     ]
 
-
 class HRFDataModule(RetinaDataModule):
     '''Data module for loading High-Resolution Fundus (HRF) data
     https://www5.cs.fau.de/research/data/fundus-images/
@@ -96,6 +95,9 @@ class HRFDataModule(RetinaDataModule):
         self.download = download
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
+
+    def license(self):
+        return 'CC BY 4.0'
         
     def prepare_data(self, predict=False):
         '''Do the following
