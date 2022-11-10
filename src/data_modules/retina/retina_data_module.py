@@ -1,8 +1,5 @@
 '''See class RetinaDataModule'''
-import pandas as pd
-import pytorch_lightning as pl
 import torchio as tio
-from torch.utils.data import DataLoader
 from ..base_data_module import BaseDataModule
 
 __all__ = [

@@ -113,6 +113,25 @@ class BaseDataModule(pl.LightningDataModule):
         self.patch_sampling_label_name = patch_sampling_label_name
         self.datasets = {}
 
+    def create_subject(self, row):
+        '''
+        Parameters
+        ----------
+        row : NamedTuple
+          Row from data_info_path
+
+        Returns
+        -------
+        subject : torchio.Subject
+        '''
+        raise NotImplementedError('Inheriting classes must implement create_subject')               
+
+        
+    def license(self):
+        '''License the data is shared under.
+        Only implement if there is a clearly specificed license for the original data source.
+        '''
+        raise NotImplementedError('No license data provided')
 
     def setup(self, stage=None):
         # pylint: disable=too-many-branches
@@ -199,3 +218,26 @@ class BaseDataModule(pl.LightningDataModule):
 
     def predict_dataloader(self):
         return self._get_dataloader('predict', False)
+
+    def train_subjects(self):
+        '''get the train subjects dataset'''
+        return self._get_subjects('train')
+
+    def val_subjects(self):
+        '''get the validation subjects dataset'''
+        return self._get_subjects('validation')
+
+    def test_subjects(self):
+        '''get the test subjects dataset'''
+        return self._get_subjects('test')
+
+    def predict_subjects(self):
+        '''get the prediction subjects dataset'''
+        return self._get_subjects('predict')
+    
+    def _get_subjects(self, ds_name):
+        if not ds_name in self.datasets:
+            raise ValueError(f'No {ds_name} data available. Ensure that at least one row in '
+                             f'"{self.data_info_path}" has dataset = {ds_name}.\n'
+                             'Did you forget to call prepare_data() or setup()?')
+        return self.datasets[ds_name]
