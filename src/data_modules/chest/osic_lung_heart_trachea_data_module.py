@@ -14,8 +14,6 @@ import torchio as tio
 from ..util import verify_sha256
 from ..base_data_module import BaseDataModule
 
-
-
 __all__ = [
     'OSICLungHeartTracheaDataModule'
 ]
@@ -99,6 +97,14 @@ class OSICLungHeartTracheaDataModule(BaseDataModule):
         self.as_images = as_images
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
+        self.bad_files = {'ID00167637202237397919352_lung.nrrd'}
+        self.lung_is_2 = {
+            'ID00019637202178323708467_lung.nrrd',
+            'ID00048637202185016727717_lung.nrrd',
+            'ID00122637202216437668965_lung.nrrd',
+            'ID00149637202232704462834_lung.nrrd',
+        }
+        self.heart_is_2 = {'ID00139637202231703564336_lung.nrrd'}
             
     def create_subject(self, row):
         '''Create a Subject. Fields depend on self.use_anatomies.
@@ -179,7 +185,7 @@ class OSICLungHeartTracheaDataModule(BaseDataModule):
             )
         print(
             f'{dl_file} checksum match.\n'
-            f'Extracting to {this.data_dir}. This will take some time'
+            f'Extracting to {self.data_dir}. This will take some time'
         )
         # There are a couple of issues we would like to fix
         # 1. Make nicer directory structure
@@ -191,6 +197,16 @@ class OSICLungHeartTracheaDataModule(BaseDataModule):
         #    store as uint8
         #    Regardless of datatype we want to compress the data inside the NRRD files, which reduce
         #    size on disk by a factor of around 100-500
+        # 3. A couple of files are problematic.
+        #    Wrong spacing
+        #        ID00167637202237397919352_lung.nrrd
+        #    Heart included in lung segmentation with pixel value 2
+        #        ID00139637202231703564336_lung.nrrd 
+        #    Pixel value 2 instead of 1
+        #        ID00019637202178323708467_lung.nrrd
+        #        ID00048637202185016727717_lung.nrrd
+        #        ID00122637202216437668965_lung.nrrd
+        #        ID00149637202232704462834_lung.nrrd
         dirmap = {
             'nrrd_lung/nrrd_lung' : 'lung',
             'nrrd_noisy/nrrd_noisy' : 'noisy',
@@ -208,12 +224,21 @@ class OSICLungHeartTracheaDataModule(BaseDataModule):
             for i, inpath in enumerate(archive.namelist()):
                 print(f'{backspaces}{i+1:{digits}}/{total_files:{digits}}', end='', flush=True)
                 # One file has a space before _
-                filename = os.path.basename(inpath).replace(' ', '') 
+                filename = os.path.basename(inpath).replace(' ', '')
+                if filename in self.bad_files:
+                    print('Skipping {filename}')
+                    continue
                 subdir = dirmap[os.path.dirname(inpath)]
                 outpath = os.path.join(self.data_dir, subdir, filename)
                 stream = io.BytesIO(archive.read(inpath))
                 header = nrrd.read_header(stream)
                 data = nrrd.read_data(header, stream)
+                if filename in self.lung_is_2:
+                    print(f' Setting lung field to 1 instead of 2 in {filename}')
+                    data[data==2] = 1
+                elif filename in self.heart_is_2:
+                    print(f' Removing heart in {filename}')
+                    data[data==2] = 0
                 header['type'] = 'uint8'
                 header['encoding'] = 'gzip'
                 nrrd.write(outpath, data.astype('uint8'), header, compression_level=9)
