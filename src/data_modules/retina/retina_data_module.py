@@ -13,8 +13,9 @@ class RetinaDataModule(BaseDataModule):
     remaining LightningDataModule key methods, see documentation for LightningDataModule. 
     '''
     # pylint: disable=too-many-instance-attributes
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, use_soft_annotations=False, **kwargs):
         '''See BaseDataModule'''
+        self.use_soft_annotations = use_soft_annotations
         super().__init__(*args, **kwargs)
                     
     def create_subject(self, row):
@@ -26,8 +27,8 @@ class RetinaDataModule(BaseDataModule):
         '''
         subject_kwargs = {
             'image' : tio.ScalarImage(row.image_path),
-            'fov' : tio.LabelMap(row.fov_path),
-            'annotation' : tio.LabelMap(row.annotation_path),
+            'fov' : tio.LabelMap(row.fov_path),            
+            'annotation' : tio.ScalarImage(row.annotation_path) if self.use_soft_annotations else tio.LabelMap(row.annotation_path),
             'weight' : tio.LabelMap(row.weight_path),
         }
         return tio.Subject(**subject_kwargs)
