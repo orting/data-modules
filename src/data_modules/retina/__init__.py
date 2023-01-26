@@ -5,7 +5,7 @@ Currently includes
   * HRF
   * STARE
 '''
-from .chase_data_module import CHASEDB1DataModule
-from .drive_data_module import DRIVEDataModule
-from .hrf_data_module import HRFDataModule
-from .stare_data_module import STAREDataModule
+from .chase_data_module_v2 import CHASEDB1DataModule
+from .drive_data_module_v2 import DRIVEDataModule
+from .hrf_data_module_v2 import HRFDataModule
+from .stare_data_module_v2 import STAREDataModule
