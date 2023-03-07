@@ -189,9 +189,9 @@ class BaseDataModule(pl.LightningDataModule):
                 
     def _get_dataloader(self, ds_name, shuffle=False):
         if not ds_name in self.datasets:
-            raise ValueError(f'No {ds_name} data available. Ensure that at least one row in '
-                             f'"{self.data_info_path}" has dataset = {ds_name}.\n'
-                             'Did you forget to call prepare_data() or setup()?')
+            raise KeyError(f'No {ds_name} data available. Ensure that at least one row in '
+                           f'"{self.data_info_path}" has dataset = {ds_name}.\n'
+                           'Did you forget to call prepare_data() or setup()?')
         if self.generate_patches:
             return self._get_patch_dataloader(ds_name, shuffle)
         return self._get_fullimage_dataloader(ds_name, shuffle)
@@ -208,6 +208,45 @@ class BaseDataModule(pl.LightningDataModule):
 
     
     def _get_patch_dataloader(self, ds_name, shuffle=False):
+        queue = self._get_patch_dataset(ds_name, shuffle)
+        return DataLoader(
+            queue,
+            batch_size=self.batch_size,
+            num_workers=0,
+            **self.extra_data_loader_kwargs
+        )    
+        
+    def train_dataloader(self, shuffle=True):
+        return self._get_dataloader('train', shuffle)
+    
+    def val_dataloader(self, shuffle=False):
+        return self._get_dataloader('validation', shuffle)
+
+    def test_dataloader(self, shuffle=False):
+        return self._get_dataloader('test', shuffle)
+
+    def predict_dataloader(self, shuffle=False):
+        return self._get_dataloader('predict', shuffle)
+
+    
+    def get_dataset(self, ds_name, shuffle=False):
+        '''
+        shuffle : bool
+          Control of subjects are shuffled after patch sampling.
+          Ignored if self.generate_patches == False.
+        '''
+        if not ds_name in self.datasets:
+            raise ValueError(f'No {ds_name} data available. Ensure that at least one row in '
+                             f'"{self.data_info_path}" has dataset = {ds_name}.\n'
+                             'Did you forget to call prepare_data() or setup()?')
+        if self.generate_patches:
+            return self._get_patch_dataset(ds_name, shuffle)
+        return self._get_fullimage_dataset(ds_name)
+
+    def _get_fullimage_dataset(self, ds_name):
+        return self.datasets[ds_name]
+
+    def _get_patch_dataset(self, ds_name, shuffle=False):
         if self.patch_sampling_label_name is not None:
             sampler = tio.data.LabelSampler(
                 self.patch_size,
@@ -229,25 +268,8 @@ class BaseDataModule(pl.LightningDataModule):
             shuffle_subjects=shuffle,
             shuffle_patches=self.shuffle_patches,
         )
-        return DataLoader(
-            queue,
-            batch_size=self.batch_size,
-            num_workers=0,
-            **self.extra_data_loader_kwargs
-        )    
-        
-    def train_dataloader(self, shuffle=True):
-        return self._get_dataloader('train', shuffle)
+        return queue
     
-    def val_dataloader(self, shuffle=False):
-        return self._get_dataloader('validation', shuffle)
-
-    def test_dataloader(self, shuffle=False):
-        return self._get_dataloader('test', shuffle)
-
-    def predict_dataloader(self, shuffle=False):
-        return self._get_dataloader('predict', shuffle)
-
     def train_subjects(self):
         '''get the train subjects dataset'''
         return self._get_subjects('train')
@@ -279,7 +301,8 @@ class BaseDataModule(pl.LightningDataModule):
             device,
             patch_size=None,
             patch_overlap=None,
-            patch_batch_size=None
+            patch_batch_size=None,
+            return_paths=False
     ):
         # pylint: disable=too-many-arguments
         '''For patch based model. Aggregate patch predictions to get full volume predictions
@@ -305,10 +328,18 @@ class BaseDataModule(pl.LightningDataModule):
         patch_batch_size : int, optional
           Batch size for patch predictions. If None use batch size from contruction
 
+        return_paths : bool, optional
+          If True yield a tuple of (prediction, path-to-input-image), otherwise only yield
+          prediction
+
         Returns
         -------
-        generator of torch.tensor
-          Generator that yields single subject predictions
+        Either
+          generator of torch.tensor 
+            Generator that yields single subject predictions
+        Or
+          generator of (torch.tensor, str)
+            Generator that yields tuple of (single subject predictions, path to input image)
 
         '''
         model = model.to(device)
@@ -332,4 +363,83 @@ class BaseDataModule(pl.LightningDataModule):
                 predictions = model.predict_batch(patches_batch, device).cpu()
                 locations = patches_batch[tio.LOCATION]
                 aggregator.add_batch(predictions, locations)
-            yield aggregator.get_output_tensor()        
+            if return_paths:
+                yield aggregator.get_output_tensor(), subject['image'][tio.PATH]
+            else:
+                yield aggregator.get_output_tensor()
+
+
+    def full_grid_feature_extraction(
+            self,
+            model,
+            ds_name,
+            device,
+            patch_size=None,
+            patch_overlap=None,
+            patch_batch_size=None,
+            return_paths=False
+    ):
+        # pylint: disable=too-many-arguments
+        '''For patch based model. Aggregate patch feature maps to get full volume feature maps
+        
+        Parameters
+        ----------
+        model : torch model
+          must have a method `extract_feature(patches_batch, device) -> feature_maps`
+
+        ds_name : str
+          Dataset to apply the model on. This is to simplify only applying full inference on a small
+          part of the data.
+
+        device : torch.device or int
+          Device used for predictions
+
+        patch_size : tuple of int, optional
+          Size of patches used for prediction. If None use patch size from construction
+        
+        patch_overlap : tuple of int, optional
+          Overlap of patches along each axis. If None use half of patch_size
+
+        patch_batch_size : int, optional
+          Batch size for patch predictions. If None use batch size from contruction
+
+        return_paths : bool, optional
+          If True yield a tuple of (prediction, path-to-input-image), otherwise only yield
+          prediction
+
+        Returns
+        -------
+        Either
+          generator of torch.tensor 
+            Generator that yields single subject feature maps
+        Or
+          generator of (torch.tensor, str)
+            Generator that yields tuple of (single subject feature maps, path to input image)
+
+        '''
+        model = model.to(device)
+        if patch_size is None:
+            patch_size = self.patch_size
+        if patch_overlap is None:
+            patch_overlap = tuple([s//2 for s in patch_size])
+        if patch_batch_size is None:
+            patch_batch_size = self.batch_size
+
+        for subject in self.datasets[ds_name]:
+            grid_sampler = tio.inference.GridSampler(
+                subject,
+                patch_size,
+                patch_overlap,
+                padding_mode=0
+            )
+            patch_loader = DataLoader(grid_sampler, batch_size=patch_batch_size)
+            aggregator = tio.inference.GridAggregator(grid_sampler, overlap_mode='hann')
+            for patches_batch in patch_loader:
+                features = model.extract_feature(patches_batch, device).cpu()
+                locations = patches_batch[tio.LOCATION]
+                aggregator.add_batch(features, locations)
+            if return_paths:
+                yield aggregator.get_output_tensor(), subject['image'][tio.PATH]
+            else:
+                yield aggregator.get_output_tensor()
+                
